@@ -8,6 +8,7 @@ Bratislava, 15/06/2016
 
 import os, sys
 from datetime import datetime
+from io import TextIOWrapper
 
 def symlink(file1, file2):
     """Create symbolic link taking care of real path."""
@@ -62,7 +63,7 @@ class FastaIndex(object):
                        "a": "t", "t": "a", "c": "g", "g": "c",
                        "N": "N", "n": "n"}
         # basecounts
-        self.basecounts = map(sum, zip(*[stats[-4:] for stats in self.id2stats.itervalues()]))
+        self.basecounts = list(map(sum, list(zip(*[stats[-4:] for stats in self.id2stats.values()]))))
         self.Ns = self.genomeSize - sum(self.basecounts)
 
     def __process_seqentry(self, out, header, seq, offset, pi):
@@ -118,7 +119,7 @@ class FastaIndex(object):
                 self.whitespaces_in_headers = False
                 return 
             rid = ldata[0]
-            stats = map(int, ldata[1:])
+            stats = list(map(int, ldata[1:]))
             self.id2stats[rid] = stats
             # update genomeSize
             self.genomeSize += stats[0]
@@ -215,7 +216,7 @@ class FastaIndex(object):
                 #if '-' in region:
                 try:
                     contig, startstop = region.split(':')
-                    start, stop = map(int, startstop.split('-'))
+                    start, stop = list(map(int, startstop.split('-')))
                 except Exception:
                     raise Exception("Malformed region definition: %s, while expected contig:start-stop"%region)
             else:
@@ -274,11 +275,11 @@ class FastaIndex(object):
         - genomeFrac - return the longest contigs until genomeFrac is reached [all]
         """
         # get all contigs
-        contigs = self.id2stats.keys()
+        contigs = list(self.id2stats.keys())
         contigi = len(contigs)
         # filter by contig length
         if minLength:
-            contigs = filter(lambda x: self.id2stats[x][0]>=minLength, self.id2stats)
+            contigs = [x for x in self.id2stats if self.id2stats[x][0]>=minLength]
         # sort by descending size
         sorted_contigs = sorted(contigs, key=lambda x: self.id2stats[x][0], reverse=reverse)
         # filter longest contigs by genome fraction
@@ -302,7 +303,7 @@ class FastaIndex(object):
             genomeSize = self.genomeSize
         # parse contigs by descending size
         totsize = 0
-        for i, x in enumerate(sorted(self.id2stats.itervalues(), reverse=True), 1):
+        for i, x in enumerate(sorted(iter(self.id2stats.values()), reverse=True), 1):
             size = x[0]
             totsize += size
             if totsize >= genomeFrac*genomeSize:
@@ -342,8 +343,8 @@ class FastaIndex(object):
         """Return FastA statistics aka fasta_stats"""
         if not self.id2stats:
             return "[WARNING] No entries found!\n"
-        longest = max(stats[0] for stats in self.id2stats.itervalues())
-        lengths1000 = [x[0] for x in self.id2stats.itervalues() if x[0]>=1000]
+        longest = max(stats[0] for stats in self.id2stats.values())
+        lengths1000 = [x[0] for x in self.id2stats.values() if x[0]>=1000]
         contigs1000 = len(lengths1000)
         _line = '%s\t%s\t%s\t%.3f\t%s\t%s\t%s\t%s\t%s\t%s\n'
         line = _line % (self.fasta, len(self), self.genomeSize, self.GC(), contigs1000, sum(lengths1000),
@@ -359,7 +360,7 @@ def main():
     parser.add_argument('--version', action='version', version='0.11c')	 
     parser.add_argument("-v", "--verbose", default=False, action="store_true",
                         help="verbose")	
-    parser.add_argument("-i", "--fasta", type=file, 
+    parser.add_argument("-i", "--fasta", type=TextIOWrapper, 
                         help="FASTA file(s)")
     parser.add_argument("-o", "--out",	 default=sys.stdout, type=argparse.FileType('w'), 
                         help="output stream	 [stdout]")

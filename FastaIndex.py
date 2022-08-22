@@ -4,11 +4,15 @@ desc="""FastA index (.fai) handler compatible with samtools faidx (http://www.ht
 """
 epilog="""Author: l.p.pryszcz+git@gmail.com
 Bratislava, 15/06/2016
+
+Updated to Python3 by Diego Fuentes Palacios
+Barcelona 07/07/2022
 """
 
 import os, sys
-from datetime import datetime
 from io import TextIOWrapper
+from datetime import datetime
+from functools import reduce
 
 def symlink(file1, file2):
     """Create symbolic link taking care of real path."""
@@ -35,7 +39,7 @@ class FastaIndex(object):
         # guess handle
         if type(handle) is str and os.path.isfile(handle): 
             handle = open(handle)
-        if type(handle) is file:
+        if type(handle) is TextIOWrapper:
             if handle.name.endswith(('.gz','.bz')):
                 raise Exception("Compressed files are currently not supported!")
             self.handle = handle
@@ -62,9 +66,23 @@ class FastaIndex(object):
         self.base2rc= {"A": "T", "T": "A", "C": "G", "G": "C",
                        "a": "t", "t": "a", "c": "g", "g": "c",
                        "N": "N", "n": "n"}
-        # basecounts
-        self.basecounts = list(map(sum, list(zip(*[stats[-4:] for stats in self.id2stats.values()]))))
-        self.Ns = self.genomeSize - sum(self.basecounts)
+        # Calculate total counts
+        counts = []
+        #Select first index, as it includes contig length
+        base_stats = [self.id2stats[stats][0] for stats in self.id2stats]
+        for count in base_stats[0:]:
+            try:
+                _, bp = count.split("_", 1)
+            except:
+                bp = count
+            counts.append(bp)
+        #Apply reduce to a lambda function
+        self.totalcounts = reduce(lambda x, y: x+y, counts)
+        
+        #Store aswell all bases counted in a map function as well as Ns
+        self.basecounts = map(sum, zip(*[stats[-4:] for stats in self.id2stats.values()]))
+        #Ns
+        self.Ns = int(self.genomeSize) - int(self.totalcounts)
 
     def __process_seqentry(self, out, header, seq, offset, pi):
         """Write stats to file and report any issues"""
@@ -120,6 +138,8 @@ class FastaIndex(object):
                 return 
             rid = ldata[0]
             stats = list(map(int, ldata[1:]))
+            #print(ldata[0], stats)
+            #print(stats)
             self.id2stats[rid] = stats
             # update genomeSize
             self.genomeSize += stats[0]
@@ -139,9 +159,7 @@ class FastaIndex(object):
     def __getitem__(self, key, start=None, stop=None, name=None, seqonly=False):
         """x.__getitem__(y) <==> x[y]"""
         if key not in self.id2stats:
-            #raise KeyError
-            sys.stderr.write("[Warning] No such entry: %s\n"%key)
-            return ""
+            raise KeyError
         # get offset info
         size, offset, linebases, linebytes = self.id2stats[key][:4]
         # compute bytes to fetch
@@ -182,7 +200,7 @@ class FastaIndex(object):
                 bytesize += linediff 
             # read entire sequence
             self.handle.seek(offset)
-            seq = self.handle.read(bytesize)
+            seq = self.handle.read(int(bytesize))
             if seqonly:
                 return "".join(seq.split('\n'))
         # update name
@@ -209,14 +227,14 @@ class FastaIndex(object):
             return self.get_reverse_complement(seq)
         return seq
         
-    def get_fasta(self, region="", contig="", start=None, stop=None, name=None):
+    def get_fasta(self, region="", contig="", start=None, stop=None):
         """Return FastA slice"""
         if region:
             if ':' in region:
                 #if '-' in region:
                 try:
                     contig, startstop = region.split(':')
-                    start, stop = list(map(int, startstop.split('-')))
+                    start, stop = map(int, startstop.split('-'))
                 except Exception:
                     raise Exception("Malformed region definition: %s, while expected contig:start-stop"%region)
             else:
@@ -225,7 +243,7 @@ class FastaIndex(object):
             self.log("Provide region or contig!\n")
             return            
         # get record
-        record = self.__getitem__(contig, start, stop, name)
+        record = self.__getitem__(contig, start, stop)
         return record
 
     def get_id(self, header):
@@ -275,11 +293,11 @@ class FastaIndex(object):
         - genomeFrac - return the longest contigs until genomeFrac is reached [all]
         """
         # get all contigs
-        contigs = list(self.id2stats.keys())
+        contigs = self.id2stats.keys()
         contigi = len(contigs)
         # filter by contig length
         if minLength:
-            contigs = [x for x in self.id2stats if self.id2stats[x][0]>=minLength]
+            contigs = filter(lambda x: self.id2stats[x][0]>=minLength, self.id2stats)
         # sort by descending size
         sorted_contigs = sorted(contigs, key=lambda x: self.id2stats[x][0], reverse=reverse)
         # filter longest contigs by genome fraction
@@ -303,7 +321,7 @@ class FastaIndex(object):
             genomeSize = self.genomeSize
         # parse contigs by descending size
         totsize = 0
-        for i, x in enumerate(sorted(iter(self.id2stats.values()), reverse=True), 1):
+        for i, x in enumerate(sorted(self.id2stats.values(), reverse=True), 1):
             size = x[0]
             totsize += size
             if totsize >= genomeFrac*genomeSize:
@@ -336,19 +354,18 @@ class FastaIndex(object):
         #if len(basecounts) != 4:
         #    return "%s\t[ERROR] Couldn't read file content\n"%handle.name
         (A, C, G, T) = self.basecounts
-        GC = 100.0*(G + C) / sum(self.basecounts)
+        GC = 100.0*(int(G) + int(C)) / int(self.totalcounts)
         return GC
 
     def stats(self):
         """Return FastA statistics aka fasta_stats"""
-        if not self.id2stats:
-            return "[WARNING] No entries found!\n"
         longest = max(stats[0] for stats in self.id2stats.values())
         lengths1000 = [x[0] for x in self.id2stats.values() if x[0]>=1000]
         contigs1000 = len(lengths1000)
         _line = '%s\t%s\t%s\t%.3f\t%s\t%s\t%s\t%s\t%s\t%s\n'
         line = _line % (self.fasta, len(self), self.genomeSize, self.GC(), contigs1000, sum(lengths1000),
                         self.N50(), self.N90(), self.Ns, longest)
+        print(line)
         return line
 
 def main():
@@ -392,6 +409,8 @@ def main():
     # fasta_stats
     if o.stats:
         o.out.write(faidx.stats())
+
+        print(faidx.stats())
         
     # report regions
     for region in o.regions:

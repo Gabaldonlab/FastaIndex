@@ -80,7 +80,7 @@ class FastaIndex(object):
         self.totalcounts = reduce(lambda x, y: x+y, counts)
         
         #Store aswell all bases counted in a map function as well as Ns
-        self.basecounts = map(sum, zip(*[stats[-4:] for stats in self.id2stats.values()]))
+        self.basecounts = set(map(sum, zip(*[stats[-4:] for stats in self.id2stats.values()])))
         #Ns
         self.Ns = int(self.genomeSize) - int(self.totalcounts)
 
@@ -377,7 +377,7 @@ def main():
     parser.add_argument('--version', action='version', version='0.11c')	 
     parser.add_argument("-v", "--verbose", default=False, action="store_true",
                         help="verbose")	
-    parser.add_argument("-i", "--fasta", type=TextIOWrapper, 
+    parser.add_argument("-i", "--fasta", type=str, 
                         help="FASTA file(s)")
     parser.add_argument("-o", "--out",	 default=sys.stdout, type=argparse.FileType('w'), 
                         help="output stream	 [stdout]")

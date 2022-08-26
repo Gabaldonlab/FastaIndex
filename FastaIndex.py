@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 desc="""FastA index (.fai) handler compatible with samtools faidx (http://www.htslib.org/doc/faidx.html).
 .fai is extended with 4 columns storing counts for A, C, G & T for each sequence.
 """
@@ -78,11 +78,12 @@ class FastaIndex(object):
             counts.append(bp)
         #Apply reduce to a lambda function
         self.totalcounts = reduce(lambda x, y: x+y, counts)
-        
+     
         #Store aswell all bases counted in a map function as well as Ns
         self.basecounts = set(map(sum, zip(*[stats[-4:] for stats in self.id2stats.values()])))
+        
         #Ns
-        self.Ns = int(self.genomeSize) - int(self.totalcounts)
+        self.Ns = int(self.genomeSize) - sum(self.basecounts)
 
     def __process_seqentry(self, out, header, seq, offset, pi):
         """Write stats to file and report any issues"""
@@ -138,8 +139,6 @@ class FastaIndex(object):
                 return 
             rid = ldata[0]
             stats = list(map(int, ldata[1:]))
-            #print(ldata[0], stats)
-            #print(stats)
             self.id2stats[rid] = stats
             # update genomeSize
             self.genomeSize += stats[0]
@@ -179,9 +178,9 @@ class FastaIndex(object):
             # 1-base, inclusive end
             start -= 1
             # get bytesize and update offset
-            offset += start / linebases * linebytes + start % linebases
+            offset += int(int(start / linebases) * linebytes) + start % linebases
             realsize = stop-start
-            bytesize = realsize / linebases * linebytes + realsize % linebases
+            bytesize = int(int(realsize / linebases) * linebytes) + realsize % linebases
             # read sequence slice
             self.handle.seek(offset)
             seq = self.handle.read(bytesize).replace('\n', '')
@@ -194,7 +193,7 @@ class FastaIndex(object):
         # load whole sequence record
         else:
             # get bytesize
-            bytesize = size / linebases * linebytes + size % linebases
+            bytesize = int(int(size / linebases) * linebytes) + size % linebases
             ## add line diff for last line only for multiline fasta if last line is not complete
             if size / linebytes and size % linebases:
                 bytesize += linediff 
@@ -353,8 +352,11 @@ class FastaIndex(object):
         # catch errors ie. empty files
         #if len(basecounts) != 4:
         #    return "%s\t[ERROR] Couldn't read file content\n"%handle.name
+        #bases = set(self.basecounts)
         (A, C, G, T) = self.basecounts
-        GC = 100.0*(int(G) + int(C)) / int(self.totalcounts)
+        
+        GC = 100.0*(int(G) + int(C)) / sum(self.basecounts)
+        
         return GC
 
     def stats(self):
@@ -365,7 +367,6 @@ class FastaIndex(object):
         _line = '%s\t%s\t%s\t%.3f\t%s\t%s\t%s\t%s\t%s\t%s\n'
         line = _line % (self.fasta, len(self), self.genomeSize, self.GC(), contigs1000, sum(lengths1000),
                         self.N50(), self.N90(), self.Ns, longest)
-        print(line)
         return line
 
 def main():
@@ -429,4 +430,3 @@ if __name__=='__main__':
         sys.stderr.write("OS error({0}): {1}\n".format(e.errno, e.strerror))        
     dt = datetime.now()-t0
     sys.stderr.write("#Time elapsed: %s\n"%dt)
-    

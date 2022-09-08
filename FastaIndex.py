@@ -80,7 +80,7 @@ class FastaIndex(object):
         self.totalcounts = reduce(lambda x, y: x+y, counts)
      
         #Store aswell all bases counted in a map function as well as Ns
-        self.basecounts = set(map(sum, zip(*[stats[-4:] for stats in self.id2stats.values()])))
+        self.basecounts = list(map(sum, zip(*[stats[-4:] for stats in self.id2stats.values()])))
         
         #Ns
         self.Ns = int(self.genomeSize) - sum(self.basecounts)
